@@ -985,13 +985,45 @@ class DOMJudgeService
         }
     }
 
-    public function maybeCreateJudgeTasks(Judging $judging, int $priority = JudgeTask::PRIORITY_DEFAULT): void
+    public function unblockJudgeTasksForSubmission(string $submissionId): void
+    {
+        // These are all the judgings that don't have associated judgetasks yet. Check whether we unblocked them.
+        $judgings = $this->em->createQueryBuilder()
+            ->select('j')
+            ->from(Judging::class, 'j')
+            ->leftJoin(JudgeTask::class, 'jt', Join::WITH, 'j.judgingid = jt.jobid')
+            ->where('jt.jobid IS NULL')
+            ->andWhere('j.submission = :submissionid')
+            ->setParameter('submissionid', $submissionId)
+            ->getQuery()
+            ->getResult();
+        foreach ($judgings as $judging) {
+            $this->maybeCreateJudgeTasks($judging, JudgeTask::PRIORITY_DEFAULT, True);
+        }
+    }
+
+    public function unblockJudgeTasks(): void
+    {
+        // These are all the judgings that don't have associated judgetasks yet. Check whether we unblocked them.
+        $judgings = $this->em->createQueryBuilder()
+            ->select('j')
+            ->from(Judging::class, 'j')
+            ->leftJoin(JudgeTask::class, 'jt', Join::WITH, 'j.judgingid = jt.jobid')
+            ->where('jt.jobid IS NULL')
+            ->getQuery()
+            ->getResult();
+        foreach ($judgings as $judging) {
+            $this->maybeCreateJudgeTasks($judging);
+        }
+    }
+
+    public function maybeCreateJudgeTasks(Judging $judging, int $priority = JudgeTask::PRIORITY_DEFAULT, bool $forceCreation = False): void
     {
         $submission = $judging->getSubmission();
         $problem    = $submission->getContestProblem();
         $language   = $submission->getLanguage();
 
-        if (!$problem->getAllowJudge() || !$language->getAllowJudge()) {
+        if ((!$problem->getAllowJudge() || !$language->getAllowJudge() || $this->config->get('lazy_eval_results') === 2) && !$forceCreation) {
             return;
         }
 
